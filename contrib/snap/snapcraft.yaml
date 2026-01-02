@@ -1,17 +1,9 @@
 name: instagram-cli
 base: core22
 version: "1.4.0"
-summary: Instagram in the terminal (CLI/TUI)
-title: Instagram CLI
-license: MIT
-contact: https://github.com/supreme-gg-gg/instagram-cli/issues
-source-code: https://github.com/supreme-gg-gg/instagram-cli
-issues: https://github.com/supreme-gg-gg/instagram-cli/issues
-website: https://github.com/supreme-gg-gg/instagram-cli#readme
-
+summary: Instagram CLI client
 description: |
-  instagram-cli is a terminal-based Instagram client built with Typer/curses,
-  using instagrapi under the hood.
+  A terminal-based Instagram CLI client.
 
 grade: stable
 confinement: strict
@@ -21,11 +13,6 @@ apps:
     command: bin/instagram-cli
     plugs:
       - network
-      - home
-    environment:
-      HOME: $SNAP_USER_DATA
-      XDG_CONFIG_HOME: $SNAP_USER_DATA
-      XDG_DATA_HOME: $SNAP_USER_DATA
 
 parts:
   instagram-cli:
@@ -36,7 +23,7 @@ parts:
       - ca-certificates
       - curl
       - xz-utils
-      # Native addon toolchain (safe to keep even if not used every time)
+      # native addon toolchain if any deps require it
       - python3
       - make
       - g++
@@ -48,7 +35,7 @@ parts:
 
       test -f package.json
 
-      # ---- Bundle Node.js (deps require Node >= 20.17) ----
+      # bundle Node.js (use latest v20.x)
       NODE_VERSION="20.19.6"
 
       case "${CRAFT_ARCH_BUILD_FOR}" in
@@ -65,11 +52,11 @@ parts:
 
       export PATH="${CRAFT_PART_INSTALL}/usr/local/bin:${PATH}"
 
-      # Avoid husky/prepare issues in build envs
+      # avoid husky/prepare issues in build envs
       export HUSKY=0
       export CI=1
 
-      # ---- Make npm more resilient to network hiccups ----
+      # make npm persist through faulty connection
       npm config set registry "https://registry.npmjs.org/"
       npm config set audit false
       npm config set fund false
@@ -80,7 +67,7 @@ parts:
       npm config set prefer-offline true
       npm config set cache "${CRAFT_PART_BUILD}/npm-cache"
 
-      # ---- Build deps (need dev deps for tsc) ----
+      # build deps (dev deps needed for tsc)
       if [ -f package-lock.json ]; then
         npm ci --ignore-scripts --no-audit --no-fund
       else
@@ -90,7 +77,7 @@ parts:
       ./node_modules/.bin/patch-package
       npm run build
 
-      # ---- Runtime deps only (prod-only) ----
+      # runtime deps only (reinstall prod-only, still no scripts)
       rm -rf node_modules
       if [ -f package-lock.json ]; then
         npm ci --omit=dev --ignore-scripts --no-audit --no-fund
@@ -100,13 +87,7 @@ parts:
 
       ./node_modules/.bin/patch-package
 
-      # Remove musl-only sharp artifacts (they trigger linter warnings on glibc Ubuntu)
-      rm -rf \
-        node_modules/@img/sharp-linuxmusl-* \
-        node_modules/@img/sharp-libvips-linuxmusl-* \
-        node_modules/@img/sharp-linuxmusl-* 2>/dev/null || true
-
-      # ---- Assemble runtime payload under $SNAP/app ----
+      # assemble runtime payload under $SNAP/app 
       mkdir -p "${CRAFT_PART_INSTALL}/app"
       cp -a package.json dist node_modules "${CRAFT_PART_INSTALL}/app/"
       [ -f package-lock.json ] && cp -a package-lock.json "${CRAFT_PART_INSTALL}/app/" || true
@@ -114,13 +95,10 @@ parts:
       [ -d resource ] && cp -a resource "${CRAFT_PART_INSTALL}/app/" || true
       [ -d data ] && cp -a data "${CRAFT_PART_INSTALL}/app/" || true
 
-      # ---- Wrapper entrypoint (force writable HOME) ----
+      # wrapper entrypoint
       install -d "${CRAFT_PART_INSTALL}/bin"
       cat > "${CRAFT_PART_INSTALL}/bin/instagram-cli" << 'EOF'
       #!/bin/sh
-      export HOME="${SNAP_USER_DATA}"
-      export XDG_CONFIG_HOME="${SNAP_USER_DATA}"
-      export XDG_DATA_HOME="${SNAP_USER_DATA}"
       exec "$SNAP/usr/local/bin/node" "$SNAP/app/dist/cli.js" "$@"
       EOF
       chmod +x "${CRAFT_PART_INSTALL}/bin/instagram-cli"
